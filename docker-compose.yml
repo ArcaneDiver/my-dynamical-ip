@@ -1,0 +1,37 @@
+version: "3.7"
+
+networks:
+  serverNetwork:
+    name: "server-network"
+
+services:
+  redis:
+    image: redis:alpine
+    command: redis-server --requirepass sOmE_sEcUrE_pAsS
+    restart: on-failure
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis-data:/var/lib/redis
+      - ./data/redis.conf:/usr/local/etc/redis/redis.conf
+    env_file:
+      - .env
+    networks:
+      - serverNetwork
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        API_PORT: ${API_PORT}
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    volumes:
+      - ./:/app
+    ports:
+      - ${API_PORT}:${API_PORT}
+    networks:
+      - serverNetwork
+    entrypoint: ["/bin/bash", "./scripts/entrypoint.dev.sh"]
