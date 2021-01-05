@@ -16,7 +16,7 @@
 BINS := api
 
 # Where to push the docker image.
-REGISTRY ?= example.com
+REGISTRY ?= hub.docker.com
 
 # This version-strategy uses git tags to set the version string
 VERSION ?= $(shell git describe --tags --always --dirty)
@@ -257,3 +257,4 @@ help:
 	    | awk '                                   \
 	        BEGIN {FS = ": *# *@HELP"};           \
 	        { printf "  %-30s %s\n", $$1, $$2 };  \
+	    '

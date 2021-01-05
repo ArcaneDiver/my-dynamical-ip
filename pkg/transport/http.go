@@ -3,6 +3,7 @@ package transport
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/go-kit/kit/tracing/opentracing"
 	"github.com/go-kit/kit/tracing/zipkin"
 	"github.com/gorilla/mux"
@@ -64,10 +65,8 @@ func decodeStoreRequest(_ context.Context, r *http.Request) (interface{}, error)
 }
 
 func encodeResponse(_ context.Context, w http.ResponseWriter, response interface{}) error {
-	var buff []byte
-
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	err := json.NewEncoder(w).Encode(&buff)
+	err := json.NewEncoder(w).Encode(response)
 
 	return err
 }
@@ -85,5 +84,5 @@ func err2code(err error) int {
 }
 
 type errorWrapper struct {
-	Error string
+	Error string `json:"error"`
 }

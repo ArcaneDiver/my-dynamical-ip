@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/joho/godotenv"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,9 +11,11 @@ import (
 	"text/tabwriter"
 
 	"my-dynamical-ip/pkg/ip"
+	redisRepo "my-dynamical-ip/pkg/repository/redis"
 	"my-dynamical-ip/pkg/transport"
 
 	stdopentracing "github.com/opentracing/opentracing-go"
+	zipkinot "github.com/openzipkin-contrib/zipkin-go-opentracing"
 	"github.com/openzipkin/zipkin-go"
 	zipkinhttp "github.com/openzipkin/zipkin-go/reporter/http"
 
@@ -24,12 +27,21 @@ func main() {
 
 	var (
 		httpAddr       = fs.String("http-addr", ":8081", "HTTP listen address")
-		zipkinURL      = fs.String("zipkin-url", "", "Enable Zipkin tracing via HTTP reporter URL e.g. http://localhost:9411/api/v2/spans")
-		zipkinBridge   = fs.Bool("zipkin-ot-bridge", false, "Use Zipkin OpenTracing bridge instead of native implementation")
+		zipkinURL      = fs.String("zipkin-url", "http://localhost:9411/api/v2/spans", "Enable Zipkin tracing via HTTP reporter URL e.g. http://localhost:9411/api/v2/spans")
+		zipkinBridge   = fs.Bool("zipkin-ot-bridge", true, "Use Zipkin OpenTracing bridge instead of native implementation")
 	)
+
+	fmt.Println(*zipkinURL)
 
 	fs.Usage = usageFor(fs, os.Args[0]+" [flags]")
 	fs.Parse(os.Args[1:])
+
+
+	godotenv.Load()
+
+	var (
+		DB_URI = os.Getenv("DB_URI")
+	)
 
 	var logger log.Logger
 	{
@@ -43,8 +55,8 @@ func main() {
 		if *zipkinURL != "" {
 			var (
 				err         error
-				hostPort    = "localhost:80"
-				serviceName = "addsvc"
+				hostPort    = "localhost:8081"
+				serviceName = "ipsvc"
 				reporter    = zipkinhttp.NewReporter(*zipkinURL)
 			)
 
@@ -65,12 +77,26 @@ func main() {
 
 	var tracer stdopentracing.Tracer
 	{
-		logger.Log("tracer", "OpenTracing")
-		tracer = stdopentracing.GlobalTracer()
+		if *zipkinBridge && zipkinTracer != nil {
+			logger.Log("tracer", "Zipkin", "type", "OpenTracing", "URL", *zipkinURL)
+			tracer = zipkinot.Wrap(zipkinTracer)
+			zipkinTracer = nil
+		} else {
+			logger.Log("tracer", "OpenTracing")
+			tracer = stdopentracing.GlobalTracer()
+		}
 	}
 
+	repo, err := redisRepo.New(DB_URI, logger)
+	if err != nil {
+		logger.Log("repository", "redis", "err", err)
+		os.Exit(1)
+	}
+	repo = ip.LoggingMiddlewareRepository(logger)(repo)
+	repo = ip.TracingMiddlwareRepository(tracer)(repo)
+
 	var (
-		service = ip.NewService(logger)
+		service = ip.NewService(logger, repo)
 		endpoints = ip.NewEndpoints(service, logger, tracer, zipkinTracer)
 		httpHandler = transport.NewHttpHandler(endpoints, tracer, zipkinTracer, logger)
 	)

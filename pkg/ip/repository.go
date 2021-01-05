@@ -1,7 +1,8 @@
 package ip
 
+import "context"
 
 type IpRepository interface {
-	Get() (string, error)
-	Store(ip string) error
+	Get(ctx context.Context) (string, error)
+	Store(ctx context.Context, ip string) error
 }

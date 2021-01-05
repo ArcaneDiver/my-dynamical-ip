@@ -2,20 +2,20 @@ package ip
 
 import (
 	"context"
-	"github.com/go-kit/kit/log"
-	"github.com/go-kit/kit/tracing/zipkin"
+	"time"
+
+	"golang.org/x/time/rate"
 
 	"github.com/go-kit/kit/circuitbreaker"
 	"github.com/go-kit/kit/endpoint"
+	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/ratelimit"
 	"github.com/go-kit/kit/tracing/opentracing"
+	"github.com/go-kit/kit/tracing/zipkin"
 
 	stdopentracing "github.com/opentracing/opentracing-go"
 	stdzipkin "github.com/openzipkin/zipkin-go"
 	"github.com/sony/gobreaker"
-
-	"golang.org/x/time/rate"
-	"time"
 )
 
 type IpEndpoint struct {
@@ -33,6 +33,7 @@ func NewEndpoints(s IpService, logger log.Logger, otTracer stdopentracing.Tracer
 		if zipkinTracer != nil {
 			getEndpoint = zipkin.TraceEndpoint(zipkinTracer, "Get")(getEndpoint)
 		}
+		getEndpoint = LogginMiddlewareEndpoint(logger)(getEndpoint)
 	}
 
 	var storeEndpoint endpoint.Endpoint
@@ -44,6 +45,8 @@ func NewEndpoints(s IpService, logger log.Logger, otTracer stdopentracing.Tracer
 		if zipkinTracer != nil {
 			storeEndpoint = zipkin.TraceEndpoint(zipkinTracer, "Store")(storeEndpoint)
 		}
+		storeEndpoint = LogginMiddlewareEndpoint(logger)(storeEndpoint)
+
 	}
 
 	return IpEndpoint{
@@ -56,13 +59,13 @@ type GetIpRequest struct {
 
 }
 type GetIpResponse struct {
-	Ip string
-	Err error
+	Ip string `json:"ip"`
+	Err error `json:"-"`
 }
 func makeGetEndpoint(s IpService) endpoint.Endpoint {
 	return func (ctx context.Context, request interface{}) (interface{}, error) {
 		_ = request.(GetIpRequest)
-		ip, err := s.Get()
+		ip, err := s.Get(ctx)
 
 		return GetIpResponse{Ip: ip, Err: err}, nil
 	}
@@ -72,12 +75,12 @@ type StoreIpRequest struct {
 	Ip string
 }
 type StoreIpResponse struct {
-	Err error
+	Err error `json:"-"`
 }
 func makeStoreEndpoint(s IpService) endpoint.Endpoint {
 	return func (ctx context.Context, request interface{}) (interface{}, error) {
 		req := request.(StoreIpRequest)
-		err := s.Store(req.Ip)
+		err := s.Store(ctx, req.Ip)
 
 		return StoreIpResponse{Err: err}, nil
 	}
